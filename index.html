@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
   <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
   
+  <!-- Если нужны свои стили -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen p-4">
@@ -23,7 +24,9 @@
     <div class="grid grid-cols-6 gap-4">
       <!-- Блок с "Доступными странами" -->
       <div class="col-span-2">
-        <h2 class="text-xl font-semibold mb-4 h-[52px]">Доступные страны</h2>
+        <h2 class="text-xl font-semibold mb-4 h-[52px]">
+          Доступные страны (<span id="availableCountriesCounter">0</span>)
+        </h2>
         
         <!-- Поле поиска -->
         <div class="mb-2">
@@ -51,16 +54,19 @@
       </div>
     </div>
 
-    <!-- Кнопки экспорта -->
+    <!-- Кнопки экспорта и импорта -->
     <div class="mt-6 flex justify-center space-x-4">
       <button id="exportJSON" class="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700">Экспорт JSON</button>
       <button id="exportTXT" class="px-4 py-2 bg-green-600 rounded hover:bg-green-700">Экспорт TXT</button>
+      <!-- Скрытый input для импорта -->
+      <input type="file" id="importJSON" accept="application/json" class="hidden">
+      <button id="importJSONButton" class="px-4 py-2 bg-purple-600 rounded hover:bg-purple-700">Импорт JSON</button>
     </div>
   </div>
 
   <script>
     $(function () {
-      // JSON-объект с категориями
+      // JSON-объект с категориями (правые колонки)
       var columns = {
         must_visit: "Обязательно к посещению",
         worth_visiting: "Стоит посетить",
@@ -69,13 +75,65 @@
         honorable_mention: "Honorable mention",
       };
 
+      // Функция обновления счётчиков для всех колонок
+      function updateCounters() {
+        // Считаем, сколько стран в "Доступные страны"
+        $("#availableCountriesCounter").text($("#availableCountries li").length);
+        // Считаем, сколько стран в каждой из колонок
+        $.each(columns, function (key) {
+          $("#" + key + "-counter").text($("#" + key + " li").length);
+        });
+      }
+
       // Функция для инициализации сортируемых списков (drag & drop)
       function makeSortable(selector) {
         $(selector).sortable({
           connectWith: ".connectedSortable",
           placeholder: "ui-state-highlight",
-          tolerance: "pointer"
+          tolerance: "pointer",
+          update: function() {
+            updateCounters();
+          }
         }).disableSelection();
+      }
+
+      // Создание элемента списка для страны (с флагом, если есть)
+      function createCountryItem(displayName, flagURL) {
+        if (flagURL) {
+          return `
+            <li class="flex items-center p-2 bg-gray-700 rounded shadow cursor-move">
+              <img src="${flagURL}" alt="Flag of ${displayName}" class="w-8 h-6 mr-4">
+              <span>${displayName}</span>
+            </li>
+          `;
+        }
+        return `
+          <li class="flex items-center p-2 bg-gray-700 rounded shadow cursor-move">
+            <span>${displayName}</span>
+          </li>
+        `;
+      }
+
+      // Функция "перенести все карточки обратно в 'Доступные страны'"
+      function moveAllColumnsBackToAvailable() {
+        $.each(columns, function(key) {
+          // Переносим все <li> из каждой колонки в "Доступные страны"
+          $("#availableCountries").append($("#" + key + " li"));
+        });
+      }
+
+      // Функция "найти карточку по названию" в "Доступные страны"
+      function findCountryInAvailable(name) {
+        // Пробегаем по всем <li> и ищем точное совпадение текста <span>
+        var foundLi = null;
+        $("#availableCountries li").each(function() {
+          var text = $(this).find("span").text();
+          if (text === name) {
+            foundLi = $(this);
+            return false; // прерываем each
+          }
+        });
+        return foundLi;
       }
 
       // Инициализируем сортируемость для списка доступных стран
@@ -85,9 +143,10 @@
       $.each(columns, function (key, title) {
         var columnHtml = `
           <div>
-            <h3 class="h-[60px] col-title text-lg font-semibold text-center mb-2">${title}</h3>
+            <h3 class="h-[60px] col-title text-lg font-semibold text-center mb-2">
+              ${title} (<span id="${key}-counter">0</span>)
+            </h3>
             <ul id="${key}" class="connectedSortable col-tier bg-gray-800 p-2 rounded shadow space-y-2 min-h-[500px] h-[500px] overflow-y-auto dark-scrollbar">
-              <!-- Сюда можно перетаскивать страны -->
             </ul>
           </div>
         `;
@@ -95,9 +154,9 @@
         makeSortable("#" + key);
       });
 
-      // Запрашиваем данные о странах с REST Countries API
+      // Загружаем данные о странах с REST Countries API
       $.getJSON("https://restcountries.com/v3.1/all", function (data) {
-        // Сортируем страны по алфавиту (английское название)
+        // Сортируем страны по алфавиту (англ. название)
         data.sort((a, b) => a.name.common.localeCompare(b.name.common));
 
         // Для каждой страны формируем плашку
@@ -111,19 +170,15 @@
             russianName = country.translations.rus.common;
           }
           
-          // Формируем итоговый вывод в виде "Англ. название (Русское название)" если перевод есть
+          // Итоговый вывод: "Англ. название (Русское название)" или просто английское
           var displayName = russianName 
             ? `${countryName} (${russianName})`
             : countryName;
 
-          var listItem = `
-            <li class="flex items-center p-2 bg-gray-700 rounded shadow cursor-move">
-              <img src="${flagURL}" alt="Flag of ${countryName}" class="w-8 h-6 mr-4">
-              <span>${displayName}</span>
-            </li>
-          `;
+          var listItem = createCountryItem(displayName, flagURL);
           $("#availableCountries").append(listItem);
         });
+        updateCounters();
       });
 
       // Обработка ввода в поле поиска с debounce для оптимизации
@@ -132,23 +187,19 @@
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(function() {
           var query = $("#searchCountry").val().toLowerCase();
-          // Перебираем все <li> внутри #availableCountries
           $("#availableCountries li").each(function() {
-            // Текст (англ.+рус) в теге span
             var countryText = $(this).find("span").text().toLowerCase();
-            // Показываем или скрываем элемент в зависимости от соответствия поиску
             $(this).toggle(countryText.includes(query));
           });
-          // Обновляем sortable после изменения видимости элементов
           $("#availableCountries").sortable("refresh");
-        }, 300); // мс задержка
+        }, 300);
       });
 
-      // Функция сбора данных из колонок
+      // Функция сбора данных из колонок (без учёта "Доступные страны")
+      // Т.к. пользователь хочет лишь сохранить, какие страны в каких колонках.
       function gatherColumnsData() {
         var exportData = {};
         $.each(columns, function (key, title) {
-          // Для каждой колонки собираем текст стран из span внутри li
           var countries = [];
           $("#" + key + " li span").each(function() {
             countries.push($(this).text());
@@ -162,7 +213,6 @@
       $("#exportJSON").click(function() {
         var data = gatherColumnsData();
         var jsonStr = JSON.stringify(data, null, 2);
-        // Создаем Blob и скачиваем файл
         var blob = new Blob([jsonStr], {type: "application/json"});
         var url  = URL.createObjectURL(blob);
         var a = document.createElement("a");
@@ -179,13 +229,11 @@
         var txtStr = "";
         $.each(data, function(title, countries) {
           txtStr += title + ":\n";
-          // Добавляем каждую страну в виде новой строки
-          $.each(countries, function(i, country) {
-            txtStr += " - " + country + "\n";
+          $.each(countries, function(i, countryName) {
+            txtStr += " - " + countryName + "\n";
           });
           txtStr += "\n";
         });
-        // Создаем Blob и скачиваем файл
         var blob = new Blob([txtStr], {type: "text/plain"});
         var url  = URL.createObjectURL(blob);
         var a = document.createElement("a");
@@ -194,6 +242,59 @@
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+      });
+
+      // Импорт JSON
+      // 1) При клике по кнопке – имитируем нажатие на input="file"
+      $("#importJSONButton").click(function() {
+        $("#importJSON").click();
+      });
+
+      // 2) Когда пользователь выбрал файл JSON
+      $("#importJSON").on("change", function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          try {
+            var importedData = JSON.parse(e.target.result);
+
+            // 1. Переносим все страны из колонок обратно в "Доступные страны"
+            moveAllColumnsBackToAvailable();
+
+            // 2. Для каждой колонки из импортированного JSON:
+            //    - Ищем совпадение по названию колонки (title) в нашем объекте columns
+            //    - Для каждого названия страны ищем карточку в #availableCountries
+            //      и перемещаем её в нужную колонку.
+            $.each(importedData, function(columnTitle, countriesArray) {
+              // Находим ключ колонки (key) по её названию (title)
+              var foundKey = null;
+              $.each(columns, function(k, t) {
+                if (t === columnTitle) {
+                  foundKey = k;
+                  return false; // прерываем each
+                }
+              });
+              // Если нашли подходящую колонку:
+              if (foundKey) {
+                // Перебираем массив стран, указанных для этой колонки
+                $.each(countriesArray, function(i, name) {
+                  // Ищем карточку по имени в "Доступные страны"
+                  var li = findCountryInAvailable(name);
+                  // Если нашли – перемещаем
+                  if (li) {
+                    $("#" + foundKey).append(li);
+                  }
+                });
+              }
+            });
+            updateCounters();
+          } catch (err) {
+            alert("Ошибка при чтении JSON файла: " + err.message);
+          }
+        };
+        reader.readAsText(file);
       });
     });
   </script>
