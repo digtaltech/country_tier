@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Тирлист для посещения</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- jQuery -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <!-- jQuery UI (для drag & drop) -->
+  <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+  <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-4">
+  <div class="container mx-auto">
+    <h1 class="text-3xl font-bold text-center mb-6">Тирлист для посещения</h1>
+
+    <!-- Grid из 6 колонок:
+         - col-span-2 слева для списка стран (с поиском),
+         - col-span-4 справа для 5 категорий. -->
+    <div class="grid grid-cols-6 gap-4">
+      <!-- Блок с "Доступными странами" -->
+      <div class="col-span-2">
+        <h2 class="text-xl font-semibold mb-4 h-[52px]">Доступные страны</h2>
+        
+        <!-- Поле поиска -->
+        <div class="mb-2">
+          <label for="searchCountry" class="sr-only">Поиск по странам</label>
+          <input 
+            type="text" 
+            id="searchCountry" 
+            placeholder="Поиск..." 
+            class="w-full p-2 rounded bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-600"
+          />
+        </div>
+
+        <!-- Список стран -->
+        <ul
+          id="availableCountries"
+          class="connectedSortable bg-gray-800 p-2 rounded shadow space-y-2 min-h-[452px] h-[452px] overflow-y-auto dark-scrollbar"
+        >
+          <!-- Сюда будут подгружаться страны из API -->
+        </ul>
+      </div>
+
+      <!-- Контейнер для колонок с категориями (5 колонок) -->
+      <div id="columnsContainer" class="col-span-4 grid grid-cols-5 gap-4">
+        <!-- Колонки будут сгенерированы динамически на основе JSON -->
+      </div>
+    </div>
+
+    <!-- Кнопки экспорта -->
+    <div class="mt-6 flex justify-center space-x-4">
+      <button id="exportJSON" class="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700">Экспорт JSON</button>
+      <button id="exportTXT" class="px-4 py-2 bg-green-600 rounded hover:bg-green-700">Экспорт TXT</button>
+    </div>
+  </div>
+
+  <script>
+    $(function () {
+      // JSON-объект с категориями
+      var columns = {
+        must_visit: "Обязательно к посещению",
+        worth_visiting: "Стоит посетить",
+        if_possible: "Можно заскочить по возможности",
+        not_interesting: "Неинтересно",
+        honorable_mention: "Honorable mention",
+      };
+
+      // Функция для инициализации сортируемых списков (drag & drop)
+      function makeSortable(selector) {
+        $(selector).sortable({
+          connectWith: ".connectedSortable",
+          placeholder: "ui-state-highlight",
+          tolerance: "pointer"
+        }).disableSelection();
+      }
+
+      // Инициализируем сортируемость для списка доступных стран
+      makeSortable("#availableCountries");
+
+      // Генерируем колонки на основе JSON-объекта
+      $.each(columns, function (key, title) {
+        var columnHtml = `
+          <div>
+            <h3 class="h-[60px] col-title text-lg font-semibold text-center mb-2">${title}</h3>
+            <ul id="${key}" class="connectedSortable col-tier bg-gray-800 p-2 rounded shadow space-y-2 min-h-[500px] h-[500px] overflow-y-auto dark-scrollbar">
+              <!-- Сюда можно перетаскивать страны -->
+            </ul>
+          </div>
+        `;
+        $("#columnsContainer").append(columnHtml);
+        makeSortable("#" + key);
+      });
+
+      // Запрашиваем данные о странах с REST Countries API
+      $.getJSON("https://restcountries.com/v3.1/all", function (data) {
+        // Сортируем страны по алфавиту (английское название)
+        data.sort((a, b) => a.name.common.localeCompare(b.name.common));
+
+        // Для каждой страны формируем плашку
+        $.each(data, function (i, country) {
+          var countryName = country.name.common;
+          var flagURL = (country.flags && country.flags.png) ? country.flags.png : "";
+
+          // Получаем русское название, если оно есть
+          var russianName = "";
+          if (country.translations && country.translations.rus && country.translations.rus.common) {
+            russianName = country.translations.rus.common;
+          }
+          
+          // Формируем итоговый вывод в виде "Англ. название (Русское название)" если перевод есть
+          var displayName = russianName 
+            ? `${countryName} (${russianName})`
+            : countryName;
+
+          var listItem = `
+            <li class="flex items-center p-2 bg-gray-700 rounded shadow cursor-move">
+              <img src="${flagURL}" alt="Flag of ${countryName}" class="w-8 h-6 mr-4">
+              <span>${displayName}</span>
+            </li>
+          `;
+          $("#availableCountries").append(listItem);
+        });
+      });
+
+      // Обработка ввода в поле поиска с debounce для оптимизации
+      var debounceTimer;
+      $("#searchCountry").on("input", function() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+          var query = $("#searchCountry").val().toLowerCase();
+          // Перебираем все <li> внутри #availableCountries
+          $("#availableCountries li").each(function() {
+            // Текст (англ.+рус) в теге span
+            var countryText = $(this).find("span").text().toLowerCase();
+            // Показываем или скрываем элемент в зависимости от соответствия поиску
+            $(this).toggle(countryText.includes(query));
+          });
+          // Обновляем sortable после изменения видимости элементов
+          $("#availableCountries").sortable("refresh");
+        }, 300); // мс задержка
+      });
+
+      // Функция сбора данных из колонок
+      function gatherColumnsData() {
+        var exportData = {};
+        $.each(columns, function (key, title) {
+          // Для каждой колонки собираем текст стран из span внутри li
+          var countries = [];
+          $("#" + key + " li span").each(function() {
+            countries.push($(this).text());
+          });
+          exportData[title] = countries;
+        });
+        return exportData;
+      }
+
+      // Экспорт в JSON
+      $("#exportJSON").click(function() {
+        var data = gatherColumnsData();
+        var jsonStr = JSON.stringify(data, null, 2);
+        // Создаем Blob и скачиваем файл
+        var blob = new Blob([jsonStr], {type: "application/json"});
+        var url  = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "countries.json";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+
+      // Экспорт в TXT
+      $("#exportTXT").click(function() {
+        var data = gatherColumnsData();
+        var txtStr = "";
+        $.each(data, function(title, countries) {
+          txtStr += title + ":\n";
+          // Добавляем каждую страну в виде новой строки
+          $.each(countries, function(i, country) {
+            txtStr += " - " + country + "\n";
+          });
+          txtStr += "\n";
+        });
+        // Создаем Blob и скачиваем файл
+        var blob = new Blob([txtStr], {type: "text/plain"});
+        var url  = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "countries.txt";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+.col-title {
+  height: 60px;
+}
+
+.dark-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #4b5563 #1f2937; /* thumb и track для Firefox */
+}
+
+.dark-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dark-scrollbar::-webkit-scrollbar-track {
+  background: #1f2937; /* Тёмный фон (gray-800) */
+}
+
+.dark-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #4b5563; /* Серый ползунок (gray-700) */
+  border-radius: 4px;
+}
+
+.col-tier {
+  span {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
